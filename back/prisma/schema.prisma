@@ -1,0 +1,113 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+// Use o provider que você configurou (PostgreSQL é o ideal para esse caso)
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 1. O Aluno (Core do sistema)
+model User {
+  id               String         @id @default(uuid())
+  nome             String
+  email            String         @unique
+  password         String
+  peso             Float?         // Para cálculo de calorias
+  altura           Float?
+  statusPagamento  Status         @default(PENDENTE)
+  stripeId         String?        // ID do cliente no Gateway
+  
+  // Relações
+  planId           String?
+  plan             Plan?          @relation(fields: [planId], references: [id])
+  fichas           WorkoutPlan[]
+  treinosRealizados WorkoutLog[]
+  
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+}
+
+enum Status {
+  ATIVO
+  INADIMPLENTE
+  PENDENTE
+}
+
+// 2. Tabela de Planos (Sua lógica: Max, Full, Mid, Low, Treadmill)
+model Plan {
+  id                String   @id @default(uuid())
+  name              String   // Max, Full, Mid, Low, Treadmill
+  price             Decimal  @db.Decimal(10, 2)
+  daysPerWeek       Int      // 3, 7 ou 0 (ilimitado)
+  hasTreadmill      Boolean  @default(false)
+  hasGym            Boolean  @default(true)
+  gatewayPlanId     String?  // ID do preço/produto no Stripe/Asaas
+  
+  users             User[]
+}
+
+// 3. Catálogo de Exercícios
+model Exercise {
+  id            Int            @id @default(autoincrement())
+  nome          String
+  met           Float          // Metabolic Equivalent (ex: 6.0 para musculação, 10.0 corrida)
+  grupoMuscular String         // PEITO, PERNAS, CARDIO...
+  isTreadmill   Boolean        @default(false) // Para validar o plano Treadmill
+  
+  itemsFicha    PlanItem[]
+  logs          LogItem[]
+}
+
+// 4. Prescrição de Treino (Ficha)
+model WorkoutPlan {
+  id        String     @id @default(uuid())
+  nome      String     // Ex: "Treino A - Hipertrofia"
+  userId    String
+  user      User       @relation(fields: [userId], references: [id])
+  items     PlanItem[]
+  ativo     Boolean    @default(true)
+  createdAt DateTime   @default(now())
+}
+
+model PlanItem {
+  id          Int         @id @default(autoincrement())
+  planId      String
+  plan        WorkoutPlan @relation(fields: [planId], references: [id])
+  exerciseId  Int
+  exercise    Exercise    @relation(fields: [exerciseId], references: [id])
+  series      Int
+  reps        Int
+  descansoSec Int
+}
+
+// 5. Execução (Onde gera o Rendimento e Calorias)
+model WorkoutLog {
+  id            String    @id @default(uuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+  inicio        DateTime  @default(now())
+  fim           DateTime?
+  duracaoMin    Int?
+  calorias      Float?
+  volumeTotal   Float?    // Soma de (carga * reps) para Rendimento
+  
+  items         LogItem[]
+}
+
+model LogItem {
+  id           Int        @id @default(autoincrement())
+  logId        String
+  log          WorkoutLog @relation(fields: [logId], references: [id])
+  exerciseId   Int
+  exercise     Exercise   @relation(fields: [exerciseId], references: [id])
+  carga        Float      // Peso usado no dia
+  repsFeitas   Int
+}
